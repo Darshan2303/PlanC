@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import React, { Component, useState, useCallback, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Polyline, Marker, TrafficLayer, InfoWindow } from '@react-google-maps/api';
-import { MapPin, Flag, AlertTriangle, Loader2, Info, Settings, X } from 'lucide-react';
+import { MapPin, Flag, AlertTriangle, Loader2, Info, Settings, X, ChevronDown, ChevronUp, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const containerStyle = {
@@ -78,6 +78,7 @@ export default function App() {
   const [routeData, setRouteData] = useState<any>(null);
   const [error, setError] = useState('');
   const [hoverInfo, setHoverInfo] = useState<{ position: google.maps.LatLng, title: string, duration: string, color: string } | null>(null);
+  const [expandedRoute, setExpandedRoute] = useState<'A' | 'B' | 'C' | null>(null);
 
   const saveSettings = () => {
     localStorage.setItem('user_maps_key', userMapsKey);
@@ -106,12 +107,12 @@ export default function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Maps-Key': userMapsKey,
+          'X-Gemini-Key': userGeminiKey
         },
         body: JSON.stringify({ 
           origin, 
-          destination,
-          mapsKey: userMapsKey,
-          geminiKey: userGeminiKey
+          destination
         }),
       });
 
@@ -137,6 +138,27 @@ export default function App() {
     }
   };
 
+  const loadTestData = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/test-data.json');
+      const data = await response.json();
+      setRouteData(data);
+      if (map && data.planA?.bounds) {
+        const bounds = new window.google.maps.LatLngBounds(
+          data.planA.bounds.southwest,
+          data.planA.bounds.northeast
+        );
+        map.fitBounds(bounds);
+      }
+    } catch (err: any) {
+      setError("Failed to load test data. Ensure test-data.json exists in the public folder.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const planAPath = routeData ? (typeof routeData.planA.polyline === 'string' ? decodePolyline(routeData.planA.polyline) : routeData.planA.polyline) : [];
   const planBPath = routeData ? (typeof routeData.planB.polyline === 'string' ? decodePolyline(routeData.planB.polyline) : routeData.planB.polyline) : [];
   const planCPath = routeData ? (typeof routeData.planC.polyline === 'string' ? decodePolyline(routeData.planC.polyline) : routeData.planC.polyline) : [];
@@ -146,16 +168,32 @@ export default function App() {
   return (
     <div className="flex w-full h-screen overflow-hidden bg-[var(--color-bg)] text-[var(--color-text-main)] font-['Helvetica_Neue',Arial,sans-serif]">
       {/* Map Section */}
-      <div className="relative flex-1 border-r border-[var(--color-muted)] overflow-hidden bg-[radial-gradient(circle_at_center,#1A1A22_0%,#0A0A0B_100%)]">
+      <div 
+        className="relative flex-1 border-r border-[var(--color-muted)] overflow-hidden bg-[radial-gradient(circle_at_center,#1A1A22_0%,#0A0A0B_100%)]"
+        role="region"
+        aria-label="Interactive Traffic Map"
+      >
         <div className="absolute inset-0 map-grid z-0 pointer-events-none"></div>
         
-        {/* Settings Button */}
-        <button 
-          onClick={() => setShowSettings(true)}
-          className="absolute top-6 right-6 z-30 p-2 bg-[var(--color-surface)] border border-[var(--color-muted)] rounded-full text-[var(--color-text-dim)] hover:text-white transition-colors"
-        >
-          <Settings className="w-5 h-5" />
-        </button>
+        {/* Settings & Demo Buttons */}
+        <div className="absolute top-6 right-6 z-30 flex gap-2">
+          <button 
+            onClick={loadTestData}
+            className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-muted)] rounded text-xs text-[var(--color-text-dim)] hover:text-white transition-colors"
+            title="Load Test Data"
+            aria-label="Load demonstration data"
+          >
+            <Database className="w-4 h-4" />
+            <span>Demo Data</span>
+          </button>
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="p-2 bg-[var(--color-surface)] border border-[var(--color-muted)] rounded text-[var(--color-text-dim)] hover:text-white transition-colors"
+            aria-label="Open system configuration"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+        </div>
 
         {/* Settings Modal */}
         <AnimatePresence>
@@ -181,8 +219,9 @@ export default function App() {
 
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Google Maps API Key</label>
+                    <label htmlFor="maps-key-input" className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Google Maps API Key</label>
                     <input 
+                      id="maps-key-input"
                       type="text"
                       value={userMapsKey}
                       onChange={(e) => setUserMapsKey(e.target.value)}
@@ -192,8 +231,9 @@ export default function App() {
                   </div>
 
                   <div>
-                    <label className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Gemini API Key</label>
+                    <label htmlFor="gemini-key-input" className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Gemini API Key</label>
                     <input 
+                      id="gemini-key-input"
                       type="text"
                       value={userGeminiKey}
                       onChange={(e) => setUserGeminiKey(e.target.value)}
@@ -374,8 +414,10 @@ export default function App() {
           {/* Search Inputs */}
           <div className="flex flex-col gap-3 mb-8">
             <div className="relative">
+              <label htmlFor="origin-input" className="sr-only">Start Location</label>
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-accent)]" />
               <input 
+                id="origin-input"
                 type="text" 
                 value={origin}
                 onChange={(e) => setOrigin(e.target.value)}
@@ -384,8 +426,10 @@ export default function App() {
               />
             </div>
             <div className="relative">
+              <label htmlFor="destination-input" className="sr-only">Destination</label>
               <Flag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-dim)]" />
               <input 
+                id="destination-input"
                 type="text" 
                 value={destination}
                 onChange={(e) => setDestination(e.target.value)}
@@ -452,7 +496,7 @@ export default function App() {
                   <div className="border border-[var(--color-accent)] bg-[rgba(0,255,136,0.05)] p-5 rounded-[4px] mb-[15px]">
                     <div className="text-[14px] font-semibold mb-[5px] text-[var(--color-accent)]">The Escape</div>
                     <div className="text-[12px] text-[var(--color-text-dim)] leading-[1.4]">
-                      Generated mathematically isolated route with 0% polyline overlap.
+                      {routeData.planC.reasoning || "Generated mathematically isolated route with 0% polyline overlap."}
                       <br/><span className="text-[var(--color-accent)] font-bold mt-1 block">ETA: {routeData.planC.duration}</span>
                     </div>
                     {isPlanBSameAsC && (
@@ -462,6 +506,65 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Route Details Collapsible Panel */}
+                <div className="border-t border-white/10 pt-6 mb-8">
+                  <span className="text-[11px] uppercase text-[var(--color-text-dim)] tracking-[2px] mb-3 block">Route Details</span>
+                  
+                  {['A', 'B', 'C'].map((planKey) => {
+                    const planData = routeData[`plan${planKey}`];
+                    if (!planData || !planData.steps) return null;
+                    
+                    const isExpanded = expandedRoute === planKey;
+                    const colorMap: Record<string, string> = {
+                      'A': '#FF3366',
+                      'B': '#FFCC00',
+                      'C': '#00FF88'
+                    };
+                    const titleMap: Record<string, string> = {
+                      'A': 'Plan A (Primary)',
+                      'B': 'Plan B (Herd)',
+                      'C': 'Plan C (Escape)'
+                    };
+
+                    return (
+                      <div key={planKey} className="mb-2">
+                        <button 
+                          onClick={() => setExpandedRoute(isExpanded ? null : planKey as 'A' | 'B' | 'C')}
+                          className="w-full flex items-center justify-between p-3 bg-white/5 hover:bg-white/10 rounded transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colorMap[planKey] }}></div>
+                            <span className="text-sm font-medium">{titleMap[planKey]}</span>
+                          </div>
+                          {isExpanded ? <ChevronUp className="w-4 h-4 text-[var(--color-text-dim)]" /> : <ChevronDown className="w-4 h-4 text-[var(--color-text-dim)]" />}
+                        </button>
+                        
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div 
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="p-4 bg-black/20 rounded-b text-xs text-gray-300 max-h-64 overflow-y-auto custom-scrollbar">
+                                {planData.steps.map((step: any, i: number) => (
+                                  <div key={i} className="mb-3 pb-3 border-b border-white/5 last:border-0 last:mb-0 last:pb-0">
+                                    <div dangerouslySetInnerHTML={{ __html: step.instruction }} className="leading-relaxed" />
+                                    <div className="text-[10px] text-[var(--color-text-dim)] mt-1.5 font-mono">
+                                      {step.distance} • {step.duration}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  })}
                 </div>
               </motion.div>
             )}
@@ -473,6 +576,7 @@ export default function App() {
           onClick={fetchRoutes}
           disabled={loading || !origin || !destination}
           className="bg-[var(--color-accent)] text-[var(--color-bg)] border-none p-[18px] font-[800] uppercase tracking-[1px] cursor-pointer w-full mt-auto disabled:opacity-50 transition-opacity flex items-center justify-center shrink-0"
+          aria-label={loading ? "Processing route" : (routeData ? "Recalculate route protocol" : "Initiate Plan C route protocol")}
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (routeData ? 'Recalculate Protocol' : 'Initiate Plan C Protocol')}
         </button>

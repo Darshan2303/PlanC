@@ -17,7 +17,9 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 app.post("/api/routes", async (req, res) => {
   try {
-    const { origin, destination, mapsKey, geminiKey } = req.body;
+    const { origin, destination } = req.body;
+    const mapsKey = req.headers['x-maps-key'] as string;
+    const geminiKey = req.headers['x-gemini-key'] as string;
     
     const effectiveMapsKey = mapsKey || process.env.GOOGLE_MAPS_API_KEY;
     const effectiveGeminiKey = geminiKey || process.env.GEMINI_API_KEY;
@@ -94,13 +96,29 @@ app.post("/api/routes", async (req, res) => {
 
     // Identify Plan A (primary) and Plan B (alternative)
     const planA = routes[0];
-    const planB = routes.length > 1 ? routes[1] : routes[0]; // Fallback if no alternative
+    const planB = routes.length > 1 ? routes[1] : routes[0];
+
+    // Extract road names to give Gemini spatial context for the routing decision
+    const getRoads = (route: any) => {
+      const roads = new Set<string>();
+      route.legs[0].steps.forEach((s: any) => {
+        const matches = s.html_instructions.match(/<b>(.*?)<\/b>/g);
+        if (matches) {
+          matches.forEach((m: string) => {
+            const road = m.replace(/<\/?b>/g, '');
+            if (road.length > 3 && !road.includes('Head') && !road.includes('Turn') && !road.includes('Merge')) {
+              roads.add(road);
+            }
+          });
+        }
+      });
+      return Array.from(roads);
+    };
+
+    const roadsA = getRoads(planA);
+    const roadsB = getRoads(planB);
 
     // 2. Agentic Reasoning (The Meta-Predictor)
-    // We simulate the Gemini reasoning here by passing the route data to Gemini
-    // to evaluate "systemic fragility" and generate a Plan C.
-    // In a real scenario, we'd use live traffic data, but we'll use Gemini to "reason" about it.
-    
     let aiData: any = {};
     
     if (!effectiveGeminiKey || effectiveGeminiKey === "MY_GEMINI_API_KEY") {
@@ -122,44 +140,54 @@ app.post("/api/routes", async (req, res) => {
     } else {
       const userAi = new GoogleGenAI({ apiKey: effectiveGeminiKey });
       const prompt = `
-        Analyze these two routes from ${origin} to ${destination}.
-        Plan A (Primary): ${planA.summary}, Distance: ${planA.legs[0].distance.text}, Duration: ${planA.legs[0].duration.text}.
-        Plan B (Algorithmic Herd Alternative): ${planB.summary}, Distance: ${planB.legs[0].distance.text}, Duration: ${planB.legs[0].duration.text}.
+        STRATEGIC ROUTING ANALYSIS: ${origin} to ${destination}
         
-        The primary route (Plan A) has an incident. Standard algorithms are funneling everyone to Plan B.
-        Calculate the "Congestion Delta" and evaluate the capacity of Plan B.
-        Trigger a failure state for Plan B ("Trap") and predict the time to total gridlock.
+        PLAN A (Primary): ${planA.summary}
+        Major Roads: ${roadsA.join(', ')}
         
-        Then, generate a "Plan C" - a mathematically isolated route that avoids the main roads used in Plan A and Plan B.
-        Return the response in JSON format with the following structure:
+        PLAN B (Algorithmic Herd Alternative): ${planB.summary}
+        Major Roads: ${roadsB.join(', ')}
+        
+        SITUATION: 
+        Plan A is compromised by a major incident. 
+        Standard navigation apps are currently funneling 85% of traffic onto Plan B.
+        Plan B is a "Herd Trap" - it lacks the capacity for this surge.
+        
+        TASK:
+        1. Analyze the spatial overlap between A and B.
+        2. Evaluate the "Systemic Fragility" of Plan B.
+        3. DECIDE on a "Plan C" (The Escape). This must be a mathematically isolated route.
+        4. Provide 1-2 specific waypoints (neighborhoods, landmarks, or secondary roads) that will FORCE a route entirely different from A and B.
+        
+        RESPONSE FORMAT (JSON):
         {
           "planB_analysis": {
-            "congestion_delta": "string",
-            "capacity_evaluation": "string",
-            "time_to_failure": "string",
-            "is_trap": boolean
+            "congestion_delta": "string (e.g. +22 mins)",
+            "capacity_evaluation": "string (technical assessment)",
+            "time_to_failure": "string (MM:SS.ms)",
+            "is_trap": true
           },
           "planC_suggestion": {
-            "summary": "string",
-            "reasoning": "string",
-            "waypoints": ["string"] // 1-2 intermediate locations to force a different route
+            "summary": "string (Strategic name for the route)",
+            "reasoning": "string (Why this bypass works spatially)",
+            "waypoints": ["string"] 
           }
         }
       `;
 
       try {
-        // For @google/genai, the response is often nested under .response
+        // Try gemini-2.0-flash first as it's the most modern and widely available
         const result = await userAi.models.generateContent({
-          model: "gemini-1.5-flash",
+          model: "gemini-2.0-flash",
           contents: [{ role: "user", parts: [{ text: prompt }] }],
         });
 
         // Try different ways to get the text depending on SDK version
         let text = "";
-        if (typeof result.text === 'string') {
-          text = result.text;
-        } else if (result.response && typeof result.response.text === 'function') {
+        if (result.response && typeof result.response.text === 'function') {
           text = await result.response.text();
+        } else if (typeof result.text === 'string') {
+          text = result.text;
         } else if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
           text = result.candidates[0].content.parts[0].text;
         }
@@ -172,27 +200,70 @@ app.post("/api/routes", async (req, res) => {
       } catch (aiError: any) {
         console.error("Gemini API Error:", aiError);
         
-        // Check for specific API key errors
-        let errorMessage = aiError.message || "Unknown error";
-        if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("invalid api key")) {
-          errorMessage = "Invalid Gemini API Key. Please check your settings.";
-        } else if (errorMessage.includes("quota") || errorMessage.includes("429")) {
-          errorMessage = "Gemini API quota exceeded. Try again in a minute.";
-        }
+        // If 404, try a fallback model
+        if (aiError.status === 404 || (aiError.message && aiError.message.includes("404"))) {
+          try {
+            console.log("Attempting fallback to gemini-1.5-flash...");
+            const fallbackResult = await userAi.models.generateContent({
+              model: "gemini-1.5-flash",
+              contents: [{ role: "user", parts: [{ text: prompt }] }],
+            });
+            let text = "";
+            if (fallbackResult.response && typeof fallbackResult.response.text === 'function') {
+              text = await fallbackResult.response.text();
+            } else if (typeof fallbackResult.text === 'string') {
+              text = fallbackResult.text;
+            }
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            aiData = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+          } catch (fallbackError) {
+            console.error("Fallback failed:", fallbackError);
+            
+            // Check for specific API key errors
+            let errorMessage = aiError.message || "Unknown error";
+            if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("invalid api key")) {
+              errorMessage = "Invalid Gemini API Key. Please check your settings.";
+            } else if (errorMessage.includes("quota") || errorMessage.includes("429")) {
+              errorMessage = "Gemini API quota exceeded. Try again in a minute.";
+            }
 
-        aiData = {
-          planB_analysis: {
-            congestion_delta: "Error",
-            capacity_evaluation: `AI analysis failed: ${errorMessage}`,
-            time_to_failure: "Unknown",
-            is_trap: true
-          },
-          planC_suggestion: {
-            summary: "Fallback Alternative Route",
-            reasoning: "Generated without AI due to API error.",
-            waypoints: []
+            aiData = {
+              planB_analysis: {
+                congestion_delta: "Error",
+                capacity_evaluation: `AI analysis failed: ${errorMessage}`,
+                time_to_failure: "Unknown",
+                is_trap: true
+              },
+              planC_suggestion: {
+                summary: "Fallback Alternative Route",
+                reasoning: "Generated without AI due to API error.",
+                waypoints: []
+              }
+            };
           }
-        };
+        } else {
+          // Check for specific API key errors
+          let errorMessage = aiError.message || "Unknown error";
+          if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("invalid api key")) {
+            errorMessage = "Invalid Gemini API Key. Please check your settings.";
+          } else if (errorMessage.includes("quota") || errorMessage.includes("429")) {
+            errorMessage = "Gemini API quota exceeded. Try again in a minute.";
+          }
+
+          aiData = {
+            planB_analysis: {
+              congestion_delta: "Error",
+              capacity_evaluation: `AI analysis failed: ${errorMessage}`,
+              time_to_failure: "Unknown",
+              is_trap: true
+            },
+            planC_suggestion: {
+              summary: "Fallback Alternative Route",
+              reasoning: "Generated without AI due to API error.",
+              waypoints: []
+            }
+          };
+        }
       }
     }
 
@@ -223,6 +294,12 @@ app.post("/api/routes", async (req, res) => {
       planC = planB;
     }
 
+    const mapSteps = (steps: any[]) => steps ? steps.map((s: any) => ({
+      instruction: s.html_instructions,
+      distance: s.distance?.text || '',
+      duration: s.duration?.text || ''
+    })) : [];
+
     res.json({
       planA: {
         summary: planA.summary,
@@ -230,18 +307,22 @@ app.post("/api/routes", async (req, res) => {
         distance: planA.legs[0].distance.text,
         polyline: planA.overview_polyline.points,
         bounds: planA.bounds,
+        steps: mapSteps(planA.legs[0].steps),
       },
       planB: {
         summary: planB.summary,
         duration: planB.legs[0].duration.text,
         distance: planB.legs[0].distance.text,
         polyline: planB.overview_polyline.points,
+        steps: mapSteps(planB.legs[0].steps),
       },
       planC: {
         summary: aiData.planC_suggestion?.summary || "Alternative Route",
+        reasoning: aiData.planC_suggestion?.reasoning,
         duration: planC.legs[0].duration.text,
         distance: planC.legs[0].distance.text,
         polyline: planC.overview_polyline.points,
+        steps: mapSteps(planC.legs[0].steps),
       },
       analysis: aiData.planB_analysis,
     });
