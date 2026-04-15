@@ -121,7 +121,6 @@ app.post("/api/routes", async (req, res) => {
       };
     } else {
       const userAi = new GoogleGenAI({ apiKey: effectiveGeminiKey });
-      const model = userAi.getGenerativeModel({ model: "gemini-2.0-flash" });
       const prompt = `
         Analyze these two routes from ${origin} to ${destination}.
         Plan A (Primary): ${planA.summary}, Distance: ${planA.legs[0].distance.text}, Duration: ${planA.legs[0].duration.text}.
@@ -149,14 +148,16 @@ app.post("/api/routes", async (req, res) => {
       `;
 
       try {
-        const aiResponse = await model.generateContent({
+        const aiResponse = await userAi.models.generateContent({
+          model: "gemini-1.5-flash",
           contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: "application/json",
-          }
         });
 
-        aiData = JSON.parse(aiResponse.response.text() || "{}");
+        // The SDK returns text directly on the response object
+        const text = aiResponse.text || "{}";
+        // Clean up markdown code blocks if present
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        aiData = JSON.parse(jsonMatch ? jsonMatch[0] : text);
       } catch (aiError) {
         console.error("Gemini API Error:", aiError);
         aiData = {

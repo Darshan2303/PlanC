@@ -393,6 +393,17 @@ export default function App() {
                 className="w-full bg-white/5 border border-[var(--color-muted)] rounded-sm py-3 pl-10 pr-4 text-sm focus:border-[var(--color-accent)] outline-none transition-all text-white placeholder-[var(--color-text-dim)]"
               />
             </div>
+            
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3 bg-red-500/10 border border-red-500/30 rounded text-xs text-red-500 flex items-start gap-2"
+              >
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </motion.div>
+            )}
           </div>
 
           {/* Dynamic Content (Route Data) */}
