@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Route AI: Agentic Escape",
+  "description": "AI-powered route planner that finds mathematically isolated routes to avoid 'herd' traffic traps.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

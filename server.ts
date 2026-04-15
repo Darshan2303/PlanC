@@ -4,6 +4,7 @@ import path from "path";
 import { Client } from "@googlemaps/google-maps-services-js";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { decodePolyline, parseGeminiJson, getFallbackRouteData } from "./src/logic.js";
 
 dotenv.config();
 
@@ -18,13 +19,11 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 app.post("/api/routes", async (req, res) => {
   try {
     const { origin, destination } = req.body;
-    const mapsKey = req.headers['x-maps-key'] as string;
-    const geminiKey = req.headers['x-gemini-key'] as string;
     const userRisk = req.headers['x-user-risk'] as string || 'agentic';
     const userAvoidance = req.headers['x-user-avoidance'] as string || '[]';
     
-    const effectiveMapsKey = mapsKey || process.env.GOOGLE_MAPS_API_KEY;
-    const effectiveGeminiKey = geminiKey || process.env.GEMINI_API_KEY;
+    const effectiveMapsKey = process.env.GOOGLE_MAPS_API_KEY;
+    const effectiveGeminiKey = process.env.GEMINI_API_KEY;
 
     const mockData = {
       planA: {
@@ -183,9 +182,10 @@ app.post("/api/routes", async (req, res) => {
       `;
 
       try {
-        // Use recommended model from skill
+        // Use recommended model
+        const userAi = new GoogleGenAI({ apiKey: effectiveGeminiKey });
         const result = await userAi.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-2.0-flash",
           contents: [{ role: "user", parts: [{ text: prompt }] }],
         });
 
@@ -193,33 +193,20 @@ app.post("/api/routes", async (req, res) => {
 
         if (!text) throw new Error("Empty response from Gemini API");
 
-        // Clean up markdown code blocks if present
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        aiData = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+        aiData = parseGeminiJson(text);
+        if (!aiData) throw new Error("Invalid JSON in Gemini response");
       } catch (aiError: any) {
         console.error("Gemini API Error:", aiError);
         
         // Check for specific API key errors
         let errorMessage = aiError.message || "Unknown error";
         if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("invalid api key")) {
-          errorMessage = "Invalid Gemini API Key. Please check your settings.";
+          errorMessage = "Invalid Gemini API Key. Please check server configuration.";
         } else if (errorMessage.includes("quota") || errorMessage.includes("429")) {
           errorMessage = "Gemini API quota exceeded. Try again in a minute.";
         }
 
-        aiData = {
-          planB_analysis: {
-            congestion_delta: "Error",
-            capacity_evaluation: `AI analysis failed: ${errorMessage}`,
-            time_to_failure: "Unknown",
-            is_trap: true
-          },
-          planC_suggestion: {
-            summary: "Fallback Alternative Route",
-            reasoning: "Generated without AI due to API error.",
-            waypoints: []
-          }
-        };
+        aiData = getFallbackRouteData(errorMessage);
       }
     }
 

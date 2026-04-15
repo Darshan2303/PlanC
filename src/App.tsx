@@ -3,6 +3,7 @@ import React, { Component, useState, useCallback, useRef, useEffect } from 'reac
 import { GoogleMap, useJsApiLoader, Polyline, Marker, TrafficLayer, InfoWindow } from '@react-google-maps/api';
 import { MapPin, Flag, AlertTriangle, Loader2, Info, Settings, X, ChevronDown, ChevronUp, Database, History, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { decodePolyline } from './logic';
 
 const containerStyle = {
   width: '100%',
@@ -27,45 +28,13 @@ const darkMapStyles = [
 ];
 
 // Polyline decoding utility
-function decodePolyline(encoded: string) {
-  if (!encoded) return [];
-  const poly = [];
-  let index = 0, len = encoded.length;
-  let lat = 0, lng = 0;
-
-  while (index < len) {
-    let b, shift = 0, result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lat += dlat;
-
-    shift = 0;
-    result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lng += dlng;
-
-    poly.push({ lat: lat / 1e5, lng: lng / 1e5 });
-  }
-  return poly;
-}
+// Moved to logic.ts
 
 export default function App() {
-  const userEmail = 'darshan032006@gmail.com';
-  const [userMapsKey, setUserMapsKey] = useState(localStorage.getItem('user_maps_key') || '');
-  const [userGeminiKey, setUserGeminiKey] = useState(localStorage.getItem('user_gemini_key') || '');
   const [showSettings, setShowSettings] = useState(false);
 
-  // Use a stable key that only changes on reload to prevent crashes during typing/pasting
-  const committedMapsKey = useRef(localStorage.getItem('user_maps_key') || import.meta.env.VITE_GOOGLE_MAPS_API_KEY).current;
+  // Use a stable key from environment variable
+  const committedMapsKey = useRef(import.meta.env.VITE_GOOGLE_MAPS_API_KEY).current;
   
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
@@ -94,8 +63,6 @@ export default function App() {
   }, []);
 
   const saveSettings = () => {
-    localStorage.setItem('user_maps_key', userMapsKey);
-    localStorage.setItem('user_gemini_key', userGeminiKey);
     localStorage.setItem('user_risk_tolerance', riskTolerance);
     localStorage.setItem('user_avoidance', JSON.stringify(avoidance));
     setShowSettings(false);
@@ -122,8 +89,6 @@ export default function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Maps-Key': userMapsKey,
-          'X-Gemini-Key': userGeminiKey,
           'X-User-Risk': riskTolerance,
           'X-User-Avoidance': JSON.stringify(avoidance)
         },
@@ -240,30 +205,6 @@ export default function App() {
                 </div>
 
                 <div className="space-y-6">
-                  <div>
-                    <label htmlFor="maps-key-input" className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Google Maps API Key</label>
-                    <input 
-                      id="maps-key-input"
-                      type="text"
-                      value={userMapsKey}
-                      onChange={(e) => setUserMapsKey(e.target.value)}
-                      placeholder="Enter Maps API Key"
-                      className="w-full bg-white/10 border border-[var(--color-muted)] rounded-sm py-3 px-4 text-sm focus:border-[var(--color-accent)] focus:bg-white/20 outline-none transition-all text-white placeholder:text-white/20"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="gemini-key-input" className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Gemini API Key</label>
-                    <input 
-                      id="gemini-key-input"
-                      type="text"
-                      value={userGeminiKey}
-                      onChange={(e) => setUserGeminiKey(e.target.value)}
-                      placeholder="Enter Gemini API Key"
-                      className="w-full bg-white/10 border border-[var(--color-muted)] rounded-sm py-3 px-4 text-sm focus:border-[var(--color-accent)] focus:bg-white/20 outline-none transition-all text-white placeholder:text-white/20"
-                    />
-                  </div>
-
                   <div className="border-t border-white/10 pt-6">
                     <label className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-4">Risk Tolerance Profile</label>
                     <div className="grid grid-cols-3 gap-2">
@@ -462,11 +403,11 @@ export default function App() {
           <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 mb-8">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-[var(--color-bg)] font-bold text-xs">
-                {userEmail ? userEmail[0].toUpperCase() : 'U'}
+                U
               </div>
               <div>
                 <div className="text-[10px] text-[var(--color-text-dim)] uppercase tracking-widest">Personalized For</div>
-                <div className="text-xs font-medium truncate max-w-[120px]">{userEmail || 'Guest User'}</div>
+                <div className="text-xs font-medium truncate max-w-[120px]">Guest User</div>
               </div>
             </div>
             <div className="flex flex-col items-end">
@@ -674,7 +615,9 @@ export default function App() {
                               <div className="p-4 bg-black/20 rounded-b text-xs text-gray-300 max-h-64 overflow-y-auto custom-scrollbar">
                                 {planData.steps.map((step: any, i: number) => (
                                   <div key={i} className="mb-3 pb-3 border-b border-white/5 last:border-0 last:mb-0 last:pb-0">
-                                    <div dangerouslySetInnerHTML={{ __html: step.instruction }} className="leading-relaxed" />
+                                    <div className="leading-relaxed">
+                                     {step.instruction.replace(/<[^>]*>?/gm, '')}
+                                   </div>
                                     <div className="text-[10px] text-[var(--color-text-dim)] mt-1.5 font-mono">
                                       {step.distance} • {step.duration}
                                     </div>
