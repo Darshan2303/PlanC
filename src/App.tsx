@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import React, { useState, useCallback, useRef } from 'react';
+import React, { Component, useState, useCallback, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Polyline, Marker, TrafficLayer, InfoWindow } from '@react-google-maps/api';
 import { MapPin, Flag, AlertTriangle, Loader2, Info, Settings, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -63,10 +63,12 @@ export default function App() {
   const [userGeminiKey, setUserGeminiKey] = useState(localStorage.getItem('user_gemini_key') || '');
   const [showSettings, setShowSettings] = useState(false);
 
-  const apiKey = userMapsKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  // Use a stable key that only changes on reload to prevent crashes during typing/pasting
+  const committedMapsKey = useRef(localStorage.getItem('user_maps_key') || import.meta.env.VITE_GOOGLE_MAPS_API_KEY).current;
+  
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: apiKey || '',
+    googleMapsApiKey: committedMapsKey || '',
   });
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
@@ -217,12 +219,12 @@ export default function App() {
         </AnimatePresence>
 
         <div className="absolute inset-0 z-10 opacity-80 mix-blend-screen">
-          {!apiKey ? (
+          {!committedMapsKey ? (
             <div className="w-full h-full flex flex-col items-center justify-center p-10 text-center">
               <AlertTriangle className="w-12 h-12 text-[var(--color-danger)] mb-4" />
               <h3 className="text-xl font-bold mb-2">Google Maps API Key Missing</h3>
               <p className="text-[var(--color-text-dim)] max-w-md">
-                Please add <strong>VITE_GOOGLE_MAPS_API_KEY</strong> to your Secrets panel in AI Studio to enable the map and routing features.
+                Please add your API key via the settings icon in the top-right corner.
               </p>
             </div>
           ) : loadError ? (
