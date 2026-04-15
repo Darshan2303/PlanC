@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import React, { useState, useCallback, useRef } from 'react';
-import { GoogleMap, useJsApiLoader, Polyline, Marker, TrafficLayer } from '@react-google-maps/api';
-import { MapPin, Flag, AlertTriangle, Loader2 } from 'lucide-react';
+import { GoogleMap, useJsApiLoader, Polyline, Marker, TrafficLayer, InfoWindow } from '@react-google-maps/api';
+import { MapPin, Flag, AlertTriangle, Loader2, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const containerStyle = {
@@ -71,6 +71,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [routeData, setRouteData] = useState<any>(null);
   const [error, setError] = useState('');
+  const [hoverInfo, setHoverInfo] = useState<{ position: google.maps.LatLng, title: string, duration: string, color: string } | null>(null);
 
   const onLoad = useCallback(function callback(map: google.maps.Map) {
     setMap(map);
@@ -85,6 +86,7 @@ export default function App() {
     setLoading(true);
     setError('');
     setRouteData(null);
+    setHoverInfo(null);
 
     try {
       const response = await fetch('/api/routes', {
@@ -120,6 +122,8 @@ export default function App() {
   const planAPath = routeData ? (typeof routeData.planA.polyline === 'string' ? decodePolyline(routeData.planA.polyline) : routeData.planA.polyline) : [];
   const planBPath = routeData ? (typeof routeData.planB.polyline === 'string' ? decodePolyline(routeData.planB.polyline) : routeData.planB.polyline) : [];
   const planCPath = routeData ? (typeof routeData.planC.polyline === 'string' ? decodePolyline(routeData.planC.polyline) : routeData.planC.polyline) : [];
+
+  const isPlanBSameAsC = routeData && JSON.stringify(routeData.planB.polyline) === JSON.stringify(routeData.planC.polyline);
 
   return (
     <div className="flex w-full h-screen overflow-hidden bg-[var(--color-bg)] text-[var(--color-text-main)] font-['Helvetica_Neue',Arial,sans-serif]">
@@ -158,41 +162,59 @@ export default function App() {
             >
               <TrafficLayer />
 
-              {/* Plan A - Muted */}
+              {/* Plan A - Primary (Red) */}
               {planAPath.length > 0 && (
-                <Polyline
-                  path={planAPath}
-                  options={{
-                    strokeColor: '#44444A',
-                    strokeOpacity: 0.8,
-                    strokeWeight: 6,
-                  }}
-                />
+                <>
+                  <Polyline
+                    path={planAPath}
+                    options={{
+                      strokeColor: '#FF3E3E', // Red
+                      strokeOpacity: 0.3,
+                      strokeWeight: 12,
+                    }}
+                    onMouseOver={(e) => setHoverInfo({ position: e.latLng!, title: 'Plan A (Primary)', duration: routeData.planA.duration, color: '#FF3E3E' })}
+                    onMouseOut={() => setHoverInfo(null)}
+                  />
+                  <Polyline
+                    path={planAPath}
+                    options={{
+                      strokeColor: '#FF3E3E', // Red
+                      strokeOpacity: 0.9,
+                      strokeWeight: 6,
+                    }}
+                    onMouseOver={(e) => setHoverInfo({ position: e.latLng!, title: 'Plan A (Primary)', duration: routeData.planA.duration, color: '#FF3E3E' })}
+                    onMouseOut={() => setHoverInfo(null)}
+                  />
+                </>
               )}
               
-              {/* Plan B - Trap (Flashing/Highlighted) */}
+              {/* Plan B - Trap (Yellow) */}
               {planBPath.length > 0 && (
                 <>
                   <Polyline
                     path={planBPath}
                     options={{
-                      strokeColor: '#FF3E3E',
+                      strokeColor: '#FFCC00', // Yellow
                       strokeOpacity: 0.3,
                       strokeWeight: 12,
                     }}
+                    onMouseOver={(e) => setHoverInfo({ position: e.latLng!, title: 'Plan B (Algorithmic Herd)', duration: routeData.planB.duration, color: '#FFCC00' })}
+                    onMouseOut={() => setHoverInfo(null)}
                   />
                   <Polyline
                     path={planBPath}
                     options={{
-                      strokeColor: '#FF3E3E',
+                      strokeColor: '#FFCC00', // Yellow
                       strokeOpacity: 0.9,
                       strokeWeight: 6,
                     }}
+                    onMouseOver={(e) => setHoverInfo({ position: e.latLng!, title: 'Plan B (Algorithmic Herd)', duration: routeData.planB.duration, color: '#FFCC00' })}
+                    onMouseOut={() => setHoverInfo(null)}
                   />
                 </>
               )}
 
-              {/* Plan C - Optimal (Glowing) */}
+              {/* Plan C - Optimal (Green) */}
               {planCPath.length > 0 && (
                 <>
                   <Polyline
@@ -203,6 +225,8 @@ export default function App() {
                       strokeWeight: 14,
                       zIndex: 9,
                     }}
+                    onMouseOver={(e) => setHoverInfo({ position: e.latLng!, title: 'Plan C (Agentic Escape)', duration: routeData.planC.duration, color: '#00FF88' })}
+                    onMouseOut={() => setHoverInfo(null)}
                   />
                   <Polyline
                     path={planCPath}
@@ -212,8 +236,20 @@ export default function App() {
                       strokeWeight: 8,
                       zIndex: 10,
                     }}
+                    onMouseOver={(e) => setHoverInfo({ position: e.latLng!, title: 'Plan C (Agentic Escape)', duration: routeData.planC.duration, color: '#00FF88' })}
+                    onMouseOut={() => setHoverInfo(null)}
                   />
                 </>
+              )}
+
+              {/* Hover InfoWindow */}
+              {hoverInfo && (
+                <InfoWindow position={hoverInfo.position} options={{ disableAutoPan: true }}>
+                  <div className="p-2 bg-[var(--color-surface)] text-[var(--color-text-main)] rounded border border-[var(--color-muted)] font-['Helvetica_Neue',Arial,sans-serif] min-w-[150px]">
+                    <div className="font-bold text-sm mb-1" style={{ color: hoverInfo.color }}>{hoverInfo.title}</div>
+                    <div className="text-xs text-[var(--color-text-dim)]">Est. Time: <span className="text-white font-mono">{hoverInfo.duration}</span></div>
+                  </div>
+                </InfoWindow>
               )}
 
               {/* Markers */}
@@ -321,6 +357,12 @@ export default function App() {
                       Generated mathematically isolated route with 0% polyline overlap.
                       <br/><span className="text-[var(--color-accent)] font-bold mt-1 block">ETA: {routeData.planC.duration}</span>
                     </div>
+                    {isPlanBSameAsC && (
+                      <div className="mt-3 p-2 bg-[#FFCC00]/10 border border-[#FFCC00]/30 rounded text-xs text-[#FFCC00] flex items-start">
+                        <AlertTriangle className="w-3 h-3 mr-1.5 mt-0.5 shrink-0" />
+                        <span>Plan B and Plan C are identical. The AI could not find a distinct alternative route.</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
