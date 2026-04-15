@@ -17,8 +17,11 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 app.post("/api/routes", async (req, res) => {
   try {
-    const { origin, destination } = req.body;
+    const { origin, destination, mapsKey, geminiKey } = req.body;
     
+    const effectiveMapsKey = mapsKey || process.env.GOOGLE_MAPS_API_KEY;
+    const effectiveGeminiKey = geminiKey || process.env.GEMINI_API_KEY;
+
     const mockData = {
       planA: {
         summary: "Old Airport Road (Primary)",
@@ -63,7 +66,7 @@ app.post("/api/routes", async (req, res) => {
       }
     };
 
-    if (!process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY === "YOUR_GOOGLE_MAPS_API_KEY") {
+    if (!effectiveMapsKey || effectiveMapsKey === "YOUR_GOOGLE_MAPS_API_KEY") {
       console.warn("Google Maps API key is missing. Returning sample traffic data.");
       return res.json(mockData);
     }
@@ -76,7 +79,7 @@ app.post("/api/routes", async (req, res) => {
           origin,
           destination,
           alternatives: true,
-          key: process.env.GOOGLE_MAPS_API_KEY,
+          key: effectiveMapsKey,
         },
       });
       routes = directionsResponse.data.routes;
@@ -100,7 +103,7 @@ app.post("/api/routes", async (req, res) => {
     
     let aiData: any = {};
     
-    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+    if (!effectiveGeminiKey || effectiveGeminiKey === "MY_GEMINI_API_KEY") {
       console.warn("GEMINI_API_KEY is missing or invalid. Using fallback reasoning.");
       // Fallback reasoning if Gemini API key is missing or invalid
       aiData = {
@@ -117,6 +120,7 @@ app.post("/api/routes", async (req, res) => {
         }
       };
     } else {
+      const userAi = new GoogleGenAI({ apiKey: effectiveGeminiKey });
       const prompt = `
         Analyze these two routes from ${origin} to ${destination}.
         Plan A (Primary): ${planA.summary}, Distance: ${planA.legs[0].distance.text}, Duration: ${planA.legs[0].duration.text}.
@@ -144,7 +148,7 @@ app.post("/api/routes", async (req, res) => {
       `;
 
       try {
-        const aiResponse = await ai.models.generateContent({
+        const aiResponse = await userAi.models.generateContent({
           model: "gemini-3-flash-preview",
           contents: prompt,
           config: {
@@ -183,7 +187,7 @@ app.post("/api/routes", async (req, res) => {
             destination,
             waypoints: aiData.planC_suggestion.waypoints,
             optimize: true,
-            key: process.env.GOOGLE_MAPS_API_KEY,
+            key: effectiveMapsKey,
           },
         });
         if (planCResponse.data.routes && planCResponse.data.routes.length > 0) {

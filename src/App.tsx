@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import React, { useState, useCallback, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Polyline, Marker, TrafficLayer, InfoWindow } from '@react-google-maps/api';
-import { MapPin, Flag, AlertTriangle, Loader2, Info } from 'lucide-react';
+import { MapPin, Flag, AlertTriangle, Loader2, Info, Settings, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const containerStyle = {
@@ -59,7 +59,11 @@ function decodePolyline(encoded: string) {
 }
 
 export default function App() {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const [userMapsKey, setUserMapsKey] = useState(localStorage.getItem('user_maps_key') || '');
+  const [userGeminiKey, setUserGeminiKey] = useState(localStorage.getItem('user_gemini_key') || '');
+  const [showSettings, setShowSettings] = useState(false);
+
+  const apiKey = userMapsKey || import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: apiKey || '',
@@ -72,6 +76,13 @@ export default function App() {
   const [routeData, setRouteData] = useState<any>(null);
   const [error, setError] = useState('');
   const [hoverInfo, setHoverInfo] = useState<{ position: google.maps.LatLng, title: string, duration: string, color: string } | null>(null);
+
+  const saveSettings = () => {
+    localStorage.setItem('user_maps_key', userMapsKey);
+    localStorage.setItem('user_gemini_key', userGeminiKey);
+    setShowSettings(false);
+    window.location.reload();
+  };
 
   const onLoad = useCallback(function callback(map: google.maps.Map) {
     setMap(map);
@@ -94,7 +105,12 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ origin, destination }),
+        body: JSON.stringify({ 
+          origin, 
+          destination,
+          mapsKey: userMapsKey,
+          geminiKey: userGeminiKey
+        }),
       });
 
       const data = await response.json();
@@ -131,6 +147,71 @@ export default function App() {
       <div className="relative flex-1 border-r border-[var(--color-muted)] overflow-hidden bg-[radial-gradient(circle_at_center,#1A1A22_0%,#0A0A0B_100%)]">
         <div className="absolute inset-0 map-grid z-0 pointer-events-none"></div>
         
+        {/* Settings Button */}
+        <button 
+          onClick={() => setShowSettings(true)}
+          className="absolute top-6 right-6 z-30 p-2 bg-[var(--color-surface)] border border-[var(--color-muted)] rounded-full text-[var(--color-text-dim)] hover:text-white transition-colors"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
+
+        {/* Settings Modal */}
+        <AnimatePresence>
+          {showSettings && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6"
+            >
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="bg-[var(--color-surface)] border border-[var(--color-muted)] w-full max-w-md p-8 rounded-lg shadow-2xl"
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <h3 className="text-xl font-bold uppercase tracking-widest">System Configuration</h3>
+                  <button onClick={() => setShowSettings(false)} className="text-[var(--color-text-dim)] hover:text-white">
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Google Maps API Key</label>
+                    <input 
+                      type="password"
+                      value={userMapsKey}
+                      onChange={(e) => setUserMapsKey(e.target.value)}
+                      placeholder="Enter Maps API Key"
+                      className="w-full bg-white/5 border border-[var(--color-muted)] rounded-sm py-3 px-4 text-sm focus:border-[var(--color-accent)] outline-none transition-all text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Gemini API Key</label>
+                    <input 
+                      type="password"
+                      value={userGeminiKey}
+                      onChange={(e) => setUserGeminiKey(e.target.value)}
+                      placeholder="Enter Gemini API Key"
+                      className="w-full bg-white/5 border border-[var(--color-muted)] rounded-sm py-3 px-4 text-sm focus:border-[var(--color-accent)] outline-none transition-all text-white"
+                    />
+                  </div>
+
+                  <button 
+                    onClick={saveSettings}
+                    className="w-full bg-[var(--color-accent)] text-[var(--color-bg)] font-bold uppercase tracking-widest py-4 rounded-sm hover:opacity-90 transition-opacity mt-4"
+                  >
+                    Save & Re-Initialize
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="absolute inset-0 z-10 opacity-80 mix-blend-screen">
           {!apiKey ? (
             <div className="w-full h-full flex flex-col items-center justify-center p-10 text-center">
