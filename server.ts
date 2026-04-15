@@ -121,6 +121,7 @@ app.post("/api/routes", async (req, res) => {
       };
     } else {
       const userAi = new GoogleGenAI({ apiKey: effectiveGeminiKey });
+      const model = userAi.getGenerativeModel({ model: "gemini-2.0-flash" });
       const prompt = `
         Analyze these two routes from ${origin} to ${destination}.
         Plan A (Primary): ${planA.summary}, Distance: ${planA.legs[0].distance.text}, Duration: ${planA.legs[0].duration.text}.
@@ -148,22 +149,20 @@ app.post("/api/routes", async (req, res) => {
       `;
 
       try {
-        const aiResponse = await userAi.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: prompt,
-          config: {
-            tools: [{ googleMaps: {} }],
+        const aiResponse = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
             responseMimeType: "application/json",
           }
         });
 
-        aiData = JSON.parse(aiResponse.text || "{}");
+        aiData = JSON.parse(aiResponse.response.text() || "{}");
       } catch (aiError) {
         console.error("Gemini API Error:", aiError);
         aiData = {
           planB_analysis: {
             congestion_delta: "Error",
-            capacity_evaluation: "AI analysis failed. See server logs.",
+            capacity_evaluation: `AI analysis failed: ${aiError instanceof Error ? aiError.message : 'Unknown error'}.`,
             time_to_failure: "Unknown",
             is_trap: true
           },
