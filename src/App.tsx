@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import React, { Component, useState, useCallback, useRef, useEffect } from 'react';
+import React, { Component, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { GoogleMap, useJsApiLoader, Polyline, Marker, TrafficLayer, InfoWindow } from '@react-google-maps/api';
 import { MapPin, Flag, AlertTriangle, Loader2, Info, Settings, X, ChevronDown, ChevronUp, Database, History, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -146,9 +146,9 @@ export default function App() {
     }
   };
 
-  const planAPath = routeData ? (typeof routeData.planA.polyline === 'string' ? decodePolyline(routeData.planA.polyline) : routeData.planA.polyline) : [];
-  const planBPath = routeData ? (typeof routeData.planB.polyline === 'string' ? decodePolyline(routeData.planB.polyline) : routeData.planB.polyline) : [];
-  const planCPath = routeData ? (typeof routeData.planC.polyline === 'string' ? decodePolyline(routeData.planC.polyline) : routeData.planC.polyline) : [];
+  const planAPath = useMemo(() => routeData ? (typeof routeData.planA.polyline === 'string' ? decodePolyline(routeData.planA.polyline) : routeData.planA.polyline) : [], [routeData]);
+  const planBPath = useMemo(() => routeData ? (typeof routeData.planB.polyline === 'string' ? decodePolyline(routeData.planB.polyline) : routeData.planB.polyline) : [], [routeData]);
+  const planCPath = useMemo(() => routeData ? (typeof routeData.planC.polyline === 'string' ? decodePolyline(routeData.planC.polyline) : routeData.planC.polyline) : [], [routeData]);
 
   const isPlanBSameAsC = routeData && JSON.stringify(routeData.planB.polyline) === JSON.stringify(routeData.planC.polyline);
 

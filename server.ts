@@ -19,6 +19,14 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 app.post("/api/routes", async (req, res) => {
   try {
     const { origin, destination } = req.body;
+
+    if (typeof origin !== 'string' || origin.length > 200 || origin.length < 3) {
+      return res.status(400).json({ error: "Invalid origin. Must be a string between 3 and 200 characters." });
+    }
+    if (typeof destination !== 'string' || destination.length > 200 || destination.length < 3) {
+      return res.status(400).json({ error: "Invalid destination. Must be a string between 3 and 200 characters." });
+    }
+
     const userRisk = req.headers['x-user-risk'] as string || 'agentic';
     const userAvoidance = req.headers['x-user-avoidance'] as string || '[]';
     
