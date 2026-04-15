@@ -181,24 +181,28 @@ export default function App() {
                   <div>
                     <label className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Google Maps API Key</label>
                     <input 
-                      type="password"
+                      type="text"
                       value={userMapsKey}
                       onChange={(e) => setUserMapsKey(e.target.value)}
                       placeholder="Enter Maps API Key"
-                      className="w-full bg-white/5 border border-[var(--color-muted)] rounded-sm py-3 px-4 text-sm focus:border-[var(--color-accent)] outline-none transition-all text-white"
+                      className="w-full bg-white/10 border border-[var(--color-muted)] rounded-sm py-3 px-4 text-sm focus:border-[var(--color-accent)] focus:bg-white/20 outline-none transition-all text-white placeholder:text-white/20"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-2">Gemini API Key</label>
                     <input 
-                      type="password"
+                      type="text"
                       value={userGeminiKey}
                       onChange={(e) => setUserGeminiKey(e.target.value)}
                       placeholder="Enter Gemini API Key"
-                      className="w-full bg-white/5 border border-[var(--color-muted)] rounded-sm py-3 px-4 text-sm focus:border-[var(--color-accent)] outline-none transition-all text-white"
+                      className="w-full bg-white/10 border border-[var(--color-muted)] rounded-sm py-3 px-4 text-sm focus:border-[var(--color-accent)] focus:bg-white/20 outline-none transition-all text-white placeholder:text-white/20"
                     />
                   </div>
+
+                  <p className="text-[10px] text-[var(--color-text-dim)] leading-relaxed italic">
+                    Note: If you are having trouble pasting, try using the keyboard shortcut (Ctrl+V or Cmd+V) while the field is focused.
+                  </p>
 
                   <button 
                     onClick={saveSettings}
