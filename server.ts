@@ -148,22 +148,42 @@ app.post("/api/routes", async (req, res) => {
       `;
 
       try {
-        const aiResponse = await userAi.models.generateContent({
+        // For @google/genai, the response is often nested under .response
+        const result = await userAi.models.generateContent({
           model: "gemini-1.5-flash",
           contents: [{ role: "user", parts: [{ text: prompt }] }],
         });
 
-        // The SDK returns text directly on the response object
-        const text = aiResponse.text || "{}";
+        // Try different ways to get the text depending on SDK version
+        let text = "";
+        if (typeof result.text === 'string') {
+          text = result.text;
+        } else if (result.response && typeof result.response.text === 'function') {
+          text = await result.response.text();
+        } else if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+          text = result.candidates[0].content.parts[0].text;
+        }
+
+        if (!text) throw new Error("Empty response from Gemini API");
+
         // Clean up markdown code blocks if present
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         aiData = JSON.parse(jsonMatch ? jsonMatch[0] : text);
-      } catch (aiError) {
+      } catch (aiError: any) {
         console.error("Gemini API Error:", aiError);
+        
+        // Check for specific API key errors
+        let errorMessage = aiError.message || "Unknown error";
+        if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("invalid api key")) {
+          errorMessage = "Invalid Gemini API Key. Please check your settings.";
+        } else if (errorMessage.includes("quota") || errorMessage.includes("429")) {
+          errorMessage = "Gemini API quota exceeded. Try again in a minute.";
+        }
+
         aiData = {
           planB_analysis: {
             congestion_delta: "Error",
-            capacity_evaluation: `AI analysis failed: ${aiError instanceof Error ? aiError.message : 'Unknown error'}.`,
+            capacity_evaluation: `AI analysis failed: ${errorMessage}`,
             time_to_failure: "Unknown",
             is_trap: true
           },
