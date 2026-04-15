@@ -20,6 +20,8 @@ app.post("/api/routes", async (req, res) => {
     const { origin, destination } = req.body;
     const mapsKey = req.headers['x-maps-key'] as string;
     const geminiKey = req.headers['x-gemini-key'] as string;
+    const userRisk = req.headers['x-user-risk'] as string || 'agentic';
+    const userAvoidance = req.headers['x-user-avoidance'] as string || '[]';
     
     const effectiveMapsKey = mapsKey || process.env.GOOGLE_MAPS_API_KEY;
     const effectiveGeminiKey = geminiKey || process.env.GEMINI_API_KEY;
@@ -142,6 +144,10 @@ app.post("/api/routes", async (req, res) => {
       const prompt = `
         STRATEGIC ROUTING ANALYSIS: ${origin} to ${destination}
         
+        USER PROFILE:
+        Risk Tolerance: ${userRisk}
+        Avoidance Preferences: ${userAvoidance}
+        
         PLAN A (Primary): ${planA.summary}
         Major Roads: ${roadsA.join(', ')}
         
@@ -157,7 +163,8 @@ app.post("/api/routes", async (req, res) => {
         1. Analyze the spatial overlap between A and B.
         2. Evaluate the "Systemic Fragility" of Plan B.
         3. DECIDE on a "Plan C" (The Escape). This must be a mathematically isolated route.
-        4. Provide 1-2 specific waypoints (neighborhoods, landmarks, or secondary roads) that will FORCE a route entirely different from A and B.
+        4. PERSONALIZE the decision: If risk is "conservative", prioritize safety/main roads. If "agentic", prioritize extreme isolation/secondary roads. Respect avoidance preferences: ${userAvoidance}.
+        5. Provide 1-2 specific waypoints (neighborhoods, landmarks, or secondary roads) that will FORCE a route entirely different from A and B.
         
         RESPONSE FORMAT (JSON):
         {
@@ -176,21 +183,13 @@ app.post("/api/routes", async (req, res) => {
       `;
 
       try {
-        // Try gemini-2.0-flash first as it's the most modern and widely available
+        // Use recommended model from skill
         const result = await userAi.models.generateContent({
-          model: "gemini-2.0-flash",
+          model: "gemini-3-flash-preview",
           contents: [{ role: "user", parts: [{ text: prompt }] }],
         });
 
-        // Try different ways to get the text depending on SDK version
-        let text = "";
-        if (result.response && typeof result.response.text === 'function') {
-          text = await result.response.text();
-        } else if (typeof result.text === 'string') {
-          text = result.text;
-        } else if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
-          text = result.candidates[0].content.parts[0].text;
-        }
+        const text = result.text;
 
         if (!text) throw new Error("Empty response from Gemini API");
 
@@ -200,70 +199,27 @@ app.post("/api/routes", async (req, res) => {
       } catch (aiError: any) {
         console.error("Gemini API Error:", aiError);
         
-        // If 404, try a fallback model
-        if (aiError.status === 404 || (aiError.message && aiError.message.includes("404"))) {
-          try {
-            console.log("Attempting fallback to gemini-1.5-flash...");
-            const fallbackResult = await userAi.models.generateContent({
-              model: "gemini-1.5-flash",
-              contents: [{ role: "user", parts: [{ text: prompt }] }],
-            });
-            let text = "";
-            if (fallbackResult.response && typeof fallbackResult.response.text === 'function') {
-              text = await fallbackResult.response.text();
-            } else if (typeof fallbackResult.text === 'string') {
-              text = fallbackResult.text;
-            }
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            aiData = JSON.parse(jsonMatch ? jsonMatch[0] : text);
-          } catch (fallbackError) {
-            console.error("Fallback failed:", fallbackError);
-            
-            // Check for specific API key errors
-            let errorMessage = aiError.message || "Unknown error";
-            if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("invalid api key")) {
-              errorMessage = "Invalid Gemini API Key. Please check your settings.";
-            } else if (errorMessage.includes("quota") || errorMessage.includes("429")) {
-              errorMessage = "Gemini API quota exceeded. Try again in a minute.";
-            }
-
-            aiData = {
-              planB_analysis: {
-                congestion_delta: "Error",
-                capacity_evaluation: `AI analysis failed: ${errorMessage}`,
-                time_to_failure: "Unknown",
-                is_trap: true
-              },
-              planC_suggestion: {
-                summary: "Fallback Alternative Route",
-                reasoning: "Generated without AI due to API error.",
-                waypoints: []
-              }
-            };
-          }
-        } else {
-          // Check for specific API key errors
-          let errorMessage = aiError.message || "Unknown error";
-          if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("invalid api key")) {
-            errorMessage = "Invalid Gemini API Key. Please check your settings.";
-          } else if (errorMessage.includes("quota") || errorMessage.includes("429")) {
-            errorMessage = "Gemini API quota exceeded. Try again in a minute.";
-          }
-
-          aiData = {
-            planB_analysis: {
-              congestion_delta: "Error",
-              capacity_evaluation: `AI analysis failed: ${errorMessage}`,
-              time_to_failure: "Unknown",
-              is_trap: true
-            },
-            planC_suggestion: {
-              summary: "Fallback Alternative Route",
-              reasoning: "Generated without AI due to API error.",
-              waypoints: []
-            }
-          };
+        // Check for specific API key errors
+        let errorMessage = aiError.message || "Unknown error";
+        if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("invalid api key")) {
+          errorMessage = "Invalid Gemini API Key. Please check your settings.";
+        } else if (errorMessage.includes("quota") || errorMessage.includes("429")) {
+          errorMessage = "Gemini API quota exceeded. Try again in a minute.";
         }
+
+        aiData = {
+          planB_analysis: {
+            congestion_delta: "Error",
+            capacity_evaluation: `AI analysis failed: ${errorMessage}`,
+            time_to_failure: "Unknown",
+            is_trap: true
+          },
+          planC_suggestion: {
+            summary: "Fallback Alternative Route",
+            reasoning: "Generated without AI due to API error.",
+            waypoints: []
+          }
+        };
       }
     }
 

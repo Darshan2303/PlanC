@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
-import React, { Component, useState, useCallback, useRef } from 'react';
+import React, { Component, useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleMap, useJsApiLoader, Polyline, Marker, TrafficLayer, InfoWindow } from '@react-google-maps/api';
-import { MapPin, Flag, AlertTriangle, Loader2, Info, Settings, X, ChevronDown, ChevronUp, Database } from 'lucide-react';
+import { MapPin, Flag, AlertTriangle, Loader2, Info, Settings, X, ChevronDown, ChevronUp, Database, History, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const containerStyle = {
@@ -59,6 +59,7 @@ function decodePolyline(encoded: string) {
 }
 
 export default function App() {
+  const userEmail = 'darshan032006@gmail.com';
   const [userMapsKey, setUserMapsKey] = useState(localStorage.getItem('user_maps_key') || '');
   const [userGeminiKey, setUserGeminiKey] = useState(localStorage.getItem('user_gemini_key') || '');
   const [showSettings, setShowSettings] = useState(false);
@@ -79,10 +80,24 @@ export default function App() {
   const [error, setError] = useState('');
   const [hoverInfo, setHoverInfo] = useState<{ position: google.maps.LatLng, title: string, duration: string, color: string } | null>(null);
   const [expandedRoute, setExpandedRoute] = useState<'A' | 'B' | 'C' | null>(null);
+  const [riskTolerance, setRiskTolerance] = useState<'conservative' | 'aggressive' | 'agentic'>('agentic');
+  const [avoidance, setAvoidance] = useState<string[]>([]);
+  const [history, setHistory] = useState<{origin: string, destination: string}[]>([]);
+
+  useEffect(() => {
+    const savedRisk = localStorage.getItem('user_risk_tolerance');
+    const savedAvoidance = localStorage.getItem('user_avoidance');
+    const savedHistory = localStorage.getItem('user_history');
+    if (savedRisk) setRiskTolerance(savedRisk as any);
+    if (savedAvoidance) setAvoidance(JSON.parse(savedAvoidance));
+    if (savedHistory) setHistory(JSON.parse(savedHistory));
+  }, []);
 
   const saveSettings = () => {
     localStorage.setItem('user_maps_key', userMapsKey);
     localStorage.setItem('user_gemini_key', userGeminiKey);
+    localStorage.setItem('user_risk_tolerance', riskTolerance);
+    localStorage.setItem('user_avoidance', JSON.stringify(avoidance));
     setShowSettings(false);
     window.location.reload();
   };
@@ -108,7 +123,9 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
           'X-Maps-Key': userMapsKey,
-          'X-Gemini-Key': userGeminiKey
+          'X-Gemini-Key': userGeminiKey,
+          'X-User-Risk': riskTolerance,
+          'X-User-Avoidance': JSON.stringify(avoidance)
         },
         body: JSON.stringify({ 
           origin, 
@@ -123,6 +140,11 @@ export default function App() {
       }
 
       setRouteData(data);
+      
+      // Update History
+      const newHistory = [{origin, destination}, ...history.filter(h => h.origin !== origin || h.destination !== destination)].slice(0, 3);
+      setHistory(newHistory);
+      localStorage.setItem('user_history', JSON.stringify(newHistory));
 
       if (map && data.planA?.bounds) {
         const bounds = new window.google.maps.LatLngBounds(
@@ -240,6 +262,44 @@ export default function App() {
                       placeholder="Enter Gemini API Key"
                       className="w-full bg-white/10 border border-[var(--color-muted)] rounded-sm py-3 px-4 text-sm focus:border-[var(--color-accent)] focus:bg-white/20 outline-none transition-all text-white placeholder:text-white/20"
                     />
+                  </div>
+
+                  <div className="border-t border-white/10 pt-6">
+                    <label className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-4">Risk Tolerance Profile</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['conservative', 'aggressive', 'agentic'] as const).map((level) => (
+                        <button
+                          key={level}
+                          onClick={() => setRiskTolerance(level)}
+                          className={`py-2 text-[10px] uppercase tracking-wider border rounded transition-all ${
+                            riskTolerance === level 
+                              ? 'bg-[var(--color-accent)] border-[var(--color-accent)] text-[var(--color-bg)] font-bold' 
+                              : 'border-[var(--color-muted)] text-[var(--color-text-dim)] hover:border-white'
+                          }`}
+                        >
+                          {level}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-[var(--color-text-dim)] mb-4">Avoidance Preferences</label>
+                    <div className="flex flex-wrap gap-2">
+                      {['Tolls', 'Highways', 'Ferries', 'Residential'].map((item) => (
+                        <button
+                          key={item}
+                          onClick={() => setAvoidance(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item])}
+                          className={`px-3 py-1.5 text-[10px] uppercase tracking-wider border rounded-full transition-all ${
+                            avoidance.includes(item)
+                              ? 'bg-white text-black border-white font-bold'
+                              : 'border-[var(--color-muted)] text-[var(--color-text-dim)] hover:border-white'
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <p className="text-[10px] text-[var(--color-text-dim)] leading-relaxed italic">
@@ -398,6 +458,27 @@ export default function App() {
       {/* Sidebar Section */}
       <aside className="w-[340px] bg-[var(--color-surface)] p-[40px_30px] flex flex-col justify-between overflow-y-auto shrink-0 z-20">
         <div className="flex flex-col">
+          {/* User Profile & Personalization */}
+          <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 mb-8">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-[var(--color-bg)] font-bold text-xs">
+                {userEmail ? userEmail[0].toUpperCase() : 'U'}
+              </div>
+              <div>
+                <div className="text-[10px] text-[var(--color-text-dim)] uppercase tracking-widest">Personalized For</div>
+                <div className="text-xs font-medium truncate max-w-[120px]">{userEmail || 'Guest User'}</div>
+              </div>
+            </div>
+            <div className="flex flex-col items-end">
+              <div className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold tracking-tighter ${riskTolerance === 'agentic' ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
+                {riskTolerance}
+              </div>
+              <div className="text-[8px] text-[var(--color-text-dim)] mt-1">
+                {avoidance.length > 0 ? `${avoidance.length} Avoidances` : 'No Avoidances'}
+              </div>
+            </div>
+          </div>
+
           {/* Branding */}
           <div className="mb-10">
             <div className="font-mono text-[11px] text-[var(--color-accent)] border border-[var(--color-accent)] px-2 py-1 inline-block mb-4">
@@ -449,6 +530,32 @@ export default function App() {
               </motion.div>
             )}
           </div>
+
+          {/* Search History */}
+          {history.length > 0 && (
+            <div className="mb-8">
+              <div className="text-[10px] text-[var(--color-text-dim)] uppercase tracking-widest mb-3 flex items-center gap-2">
+                <History className="w-3 h-3" />
+                <span>Recent Extractions</span>
+              </div>
+              <div className="space-y-2">
+                {history.map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setOrigin(item.origin);
+                      setDestination(item.destination);
+                    }}
+                    className="w-full text-left p-2 bg-white/5 border border-white/5 hover:border-white/20 rounded transition-all group"
+                  >
+                    <div className="text-[10px] text-white/80 truncate group-hover:text-[var(--color-accent)] transition-colors">
+                      {item.origin} → {item.destination}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Dynamic Content (Route Data) */}
           <AnimatePresence>
@@ -506,6 +613,21 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Personalized Insights */}
+                <div className="mb-8 p-4 bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Zap className="w-4 h-4 text-[var(--color-accent)]" />
+                    <span className="text-[11px] uppercase font-bold tracking-widest text-[var(--color-accent)]">Personalized Insight</span>
+                  </div>
+                  <p className="text-[11px] text-[var(--color-text-dim)] leading-relaxed italic">
+                    {riskTolerance === 'agentic' 
+                      ? "Your 'Agentic' profile is currently overriding standard navigation logic to prioritize extreme spatial isolation. We are scanning for secondary arterials that the 'Herd' algorithms are ignoring."
+                      : riskTolerance === 'conservative'
+                      ? "Your 'Conservative' profile is prioritizing established secondary roads with high visibility and emergency access, while still avoiding the Plan B herd trap."
+                      : "Your 'Aggressive' profile is balancing speed and isolation, looking for the fastest possible bypass regardless of road class."}
+                  </p>
                 </div>
 
                 {/* Route Details Collapsible Panel */}
